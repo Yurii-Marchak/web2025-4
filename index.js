@@ -1,45 +1,43 @@
-const fs = require('fs');
 const { Command } = require('commander');
+const fs = require('fs');
+const http = require('http');
+const path = require('path');
+
 const program = new Command();
 
 program
-  .requiredOption('-i, --input <path>', 'шлях до вхідного файлу (обовʼязковий)')
-  .option('-o, --output <path>', 'шлях до вихідного файлу')
-  .option('-d, --display', 'вивести результат у консоль');
+  .requiredOption('-h, --host <type>', 'Адреса сервера')
+  .requiredOption('-p, --port <number>', 'Порт сервера')
+  .requiredOption('-i, --input <path>', 'Шлях до JSON-файлу');
 
 program.parse(process.argv);
+
 const options = program.opts();
 
-if (!options.input) {
-  console.error('Please, specify input file');
-  process.exit(1);
-}
-
-// Перевіряємо існування файлу
+// Перевірка, чи існує файл
 if (!fs.existsSync(options.input)) {
-  console.error('Cannot find input file');
+  console.error("Cannot find input file");
   process.exit(1);
 }
 
-// Читаємо JSON
-const data = JSON.parse(fs.readFileSync(options.input, 'utf-8'));
-
-// Знаходимо всі значення rate, якщо є поле txt = Золото
-const goldRates = data
-  .filter(entry => entry.txt === 'Золото')
-  .map(entry => entry.rate);
-
-if (goldRates.length === 0) {
-  process.exit(0); // якщо немає золота — нічого не виводимо
+// Читання JSON
+let jsonData = null;
+try {
+  const content = fs.readFileSync(options.input, 'utf8');
+  jsonData = JSON.parse(content);
+} catch (err) {
+  console.error("Помилка при читанні або парсингу JSON:", err.message);
+  process.exit(1);
 }
 
-const maxRate = Math.max(...goldRates);
-const result = `Максимальний курс: ${maxRate}`;
+// Створення сервера
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(jsonData, null, 2));
+});
 
-// Виводимо згідно з параметрами
-if (options.output) {
-  fs.writeFileSync(options.output, result, 'utf-8');
-}
-if (options.display) {
-  console.log(result);
-}
+// Запуск сервера
+server.listen(options.port, options.host, () => {
+  console.log(`Сервер працює на http://${options.host}:${options.port}`);
+});
+
