@@ -1,41 +1,56 @@
-const http = require('http');
 const { Command } = require('commander');
-const fs = require('fs/promises');
-const js2xmlparser = require("js2xmlparser");
+const http = require('http');
+const https = require('https');
+const js2xmlparser = require('js2xmlparser');
 
 const program = new Command();
 
 program
-  .requiredOption('-h, --host <host>', 'Адреса сервера')
-  .requiredOption('-p, --port <port>', 'Порт сервера')
-  .requiredOption('-i, --input <file>', 'Шлях до вхідного JSON файлу');
+  .requiredOption('-h, --host <host>', 'Host (server address)')
+  .requiredOption('-p, --port <port>', 'Port (server port)');
 
 program.parse(process.argv);
 const options = program.opts();
 
-// Створення HTTP-сервера
-const server = http.createServer(async (req, res) => {
-  try {
-    const file = await fs.readFile(options.input, 'utf-8');
-    const json = JSON.parse(file);
+const host = options.host;
+const port = parseInt(options.port);
 
-    // Мапимо JSON у формат, що підходить для XML
-    const xmlData = {
-      excgange: json.map(item => ({
-        date: item.exchangedate,
-        rate: item.rate
-      }))
-    };
+const NBU_API_URL = 'https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json';
 
-    const xml = js2xmlparser.parse("data", xmlData);
-    res.writeHead(200, { 'Content-Type': 'application/xml' });
-    res.end(xml);
-  } catch (err) {
+const server = http.createServer((req, res) => {
+  https.get(NBU_API_URL, (apiRes) => {
+    let data = '';
+
+    apiRes.on('data', chunk => {
+      data += chunk;
+    });
+
+    apiRes.on('end', () => {
+      try {
+        const jsonData = JSON.parse(data);
+
+        const exchangeArray = jsonData.map(item => ({
+          date: item.exchangedate,
+          rate: item.rate,
+          currency: item.txt
+        }));
+
+        const xmlData = js2xmlparser.parse("data", { exchange: exchangeArray });
+
+        res.writeHead(200, { 'Content-Type': 'application/xml' });
+        res.end(xmlData);
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Failed to parse NBU data');
+      }
+    });
+
+  }).on('error', () => {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end("Помилка читання або обробки файлу");
-  }
+    res.end('Failed to fetch NBU data');
+  });
 });
 
-server.listen(options.port, options.host, () => {
-  console.log(`Сервер працює на http://${options.host}:${options.port}`);
+server.listen(port, host, () => {
+  console.log(`Сервер запущено на http://${host}:${port}`);
 });
